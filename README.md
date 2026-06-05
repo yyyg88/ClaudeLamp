@@ -24,7 +24,7 @@ It starts and stops **automatically** with Claude Code — no manual clicks, no 
 
 ```powershell
 # 1. Clone
-git clone https://github.com/yyyg88/claudelamp.git
+git clone https://github.com/yyyg88/ClaudeLamp.git
 cd ClaudeLamp
 
 # 2. Install dependencies
