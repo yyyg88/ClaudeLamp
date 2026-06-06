@@ -4,7 +4,8 @@
 A miniature floating traffic-light widget that sits on your desktop and
 shows Claude Code's real-time working state at a glance.
 
-Uses PIL (Pillow) for crisp, anti-aliased rendering on any DPI.
+Uses Tkinter Canvas for the rounded housing + three coloured lamps,
+with transparent background so only the traffic light itself is visible.
 
 State mapping:
   🟢 green  → Working (executing tools / thinking)
@@ -32,8 +33,6 @@ import tkinter as tk
 from pathlib import Path
 from typing import Optional
 
-from PIL import Image, ImageDraw, ImageTk
-
 # ── Windows DPI awareness ─────────────────────────────────
 try:
     ctypes.windll.shcore.SetProcessDpiAwareness(2)
@@ -51,6 +50,7 @@ CONFIG_FILE = REPO_ROOT / ".claudelamp_config.json"
 # ── Constants ─────────────────────────────────────────────
 HOST = "127.0.0.1"
 PORT = int(os.environ.get("CLAUDELAMP_PORT", "23335"))
+TRANSPARENT = "#010101"
 
 SIZE_PRESETS = {
     "small":  (45, 150),
@@ -58,29 +58,28 @@ SIZE_PRESETS = {
     "large":  (87, 282),
 }
 
-# Lamp "on" colours (shared across themes) — RGB tuples
 LIGHT_ON = {
-    "red":    (244, 67, 54),
-    "yellow": (255, 193, 7),
-    "green":  (76, 175, 80),
+    "red":    "#F44336",
+    "yellow": "#FFC107",
+    "green":  "#4CAF50",
 }
 
 THEMES = {
     "dark": {
-        "label":        "Dark housing",
-        "bg":           (44, 44, 44),
-        "border":       (26, 26, 26),
-        "off_red":      (61, 17, 17),
-        "off_yellow":   (61, 46, 7),
-        "off_green":    (13, 45, 15),
+        "label":          "Dark housing",
+        "housing_fill":   "#2C2C2C",
+        "housing_border": "#1A1A1A",
+        "off_red":        "#3D1111",
+        "off_yellow":     "#3D2E07",
+        "off_green":      "#0D2D0F",
     },
     "light": {
-        "label":        "Light housing",
-        "bg":           (232, 232, 232),
-        "border":       (176, 176, 176),
-        "off_red":      (245, 198, 198),
-        "off_yellow":   (245, 236, 208),
-        "off_green":    (198, 230, 200),
+        "label":          "Light housing",
+        "housing_fill":   "#E8E8E8",
+        "housing_border": "#B0B0B0",
+        "off_red":        "#F5C6C6",
+        "off_yellow":     "#F5ECD0",
+        "off_green":      "#C6E6C8",
     },
 }
 
@@ -93,7 +92,7 @@ STATE_TO_ACTIVE = {
 
 
 # ═══════════════════════════════════════════════════════════
-# Config helpers
+# Helpers
 # ═══════════════════════════════════════════════════════════
 
 def _load_config() -> dict:
@@ -118,86 +117,20 @@ def _save_config(cfg: dict) -> None:
 
 
 # ═══════════════════════════════════════════════════════════
-# PIL renderer
-# ═══════════════════════════════════════════════════════════
-
-class LampRenderer:
-    """Render the traffic-light image with PIL for crisp quality.
-
-    Images are cached by (size, theme, state) so we only redraw when
-    something actually changes.
-    """
-
-    def __init__(self) -> None:
-        self._cache: dict[str, ImageTk.PhotoImage] = {}
-
-    def render(
-        self, w: int, h: int, theme_key: str, state: str
-    ) -> ImageTk.PhotoImage:
-        cache_key = f"{w}x{h}:{theme_key}:{state}"
-        if cache_key in self._cache:
-            return self._cache[cache_key]
-
-        theme = THEMES.get(theme_key, THEMES["dark"])
-        active = STATE_TO_ACTIVE.get(state)
-
-        # Image background = housing colour (no transparency hacks needed)
-        img = Image.new("RGBA", (w, h), theme["bg"] + (255,))
-        draw = ImageDraw.Draw(img)
-
-        # Layout
-        pad = max(4, int(w * 0.12))
-        usable_top = pad + (h - 2 * pad) * 0.07
-        usable_btm = h - pad - (h - 2 * pad) * 0.07
-        spacing = (usable_btm - usable_top) / 3.0
-        radius = max(4, int(w * 0.17))
-        cx = w / 2.0
-
-        off_map = {
-            "red": theme["off_red"], "yellow": theme["off_yellow"],
-            "green": theme["off_green"],
-        }
-
-        for i, name in enumerate(["red", "yellow", "green"]):
-            cy = usable_top + spacing * (i + 0.5)
-            bbox = (cx - radius, cy - radius, cx + radius, cy + radius)
-
-            if name == active:
-                fill, outline = LIGHT_ON[name], None
-            else:
-                fill, outline = off_map.get(name, (30, 30, 30)), theme["border"]
-
-            draw.ellipse(bbox, fill=fill, outline=outline, width=1)
-
-        # Housing border (1 px inset)
-        draw.rectangle(
-            [1, 1, w - 2, h - 2], fill=None, outline=theme["border"], width=1,
-        )
-
-        photo = ImageTk.PhotoImage(img)
-        self._cache[cache_key] = photo
-        return photo
-
-    def clear_cache(self) -> None:
-        self._cache.clear()
-
-
-# ═══════════════════════════════════════════════════════════
-# Desktop floating window
+# Floating traffic-light window
 # ═══════════════════════════════════════════════════════════
 
 class LampWindow:
     """Borderless, always-on-top traffic-light widget.
 
-    PIL-rendered image displayed via a Tkinter Label — no Canvas shapes,
-    no transparency-colour hacks.
+    Canvas-drawn rounded housing + three flat-colour lamps (no glow rings),
+    transparent background so only the traffic-light shape is visible.
     """
 
     def __init__(self) -> None:
         self._cfg = _load_config()
         self._current_state: str = "gray"
         self._current_theme: str = self._cfg.get("theme", "dark")
-        self._renderer = LampRenderer()
         self._drag_x: int = 0
         self._drag_y: int = 0
 
@@ -206,16 +139,22 @@ class LampWindow:
         self._root.title("ClaudeLamp")
         self._root.overrideredirect(True)
         self._root.attributes("-topmost", True)
+        self._root.configure(bg=TRANSPARENT)
+        self._root.wm_attributes("-transparentcolor", TRANSPARENT)
 
-        # ── Image label ───────────────────────────────────
-        self._label = tk.Label(self._root, bd=0, highlightthickness=0)
-        self._label.pack()
+        # ── Canvas ────────────────────────────────────────
+        w, h = self._get_size()
+        self._canvas = tk.Canvas(
+            self._root, width=w, height=h,
+            bg=TRANSPARENT, highlightthickness=0, bd=0,
+        )
+        self._canvas.pack()
 
         # ── Events ────────────────────────────────────────
-        self._label.bind("<Button-1>", self._on_drag_start)
-        self._label.bind("<B1-Motion>", self._on_drag_move)
-        self._label.bind("<ButtonRelease-1>", self._on_drag_end)
-        self._label.bind("<Button-3>", self._on_right_click)
+        self._canvas.bind("<Button-1>", self._on_drag_start)
+        self._canvas.bind("<B1-Motion>", self._on_drag_move)
+        self._canvas.bind("<ButtonRelease-1>", self._on_drag_end)
+        self._canvas.bind("<Button-3>", self._on_right_click)
 
         # ── Menu ──────────────────────────────────────────
         self._menu = tk.Menu(self._root, tearoff=0)
@@ -237,14 +176,90 @@ class LampWindow:
     def _get_size(self) -> tuple[int, int]:
         return (self._cfg["width"], self._cfg["height"])
 
+    def _get_theme(self) -> dict:
+        return THEMES.get(self._current_theme, THEMES["dark"])
+
     # ── Drawing ───────────────────────────────────────────
 
     def _draw(self) -> None:
+        """Full redraw: rounded housing + three flat lamps."""
+        self._canvas.delete("all")
         w, h = self._get_size()
-        photo = self._renderer.render(w, h, self._current_theme, self._current_state)
-        self._label.configure(image=photo)
-        self._label.image = photo  # keep ref alive
+        theme = self._get_theme()
+
+        self._canvas.configure(width=w, height=h)
         self._root.geometry(f"{w}x{h}")
+
+        # Rounded housing
+        pad = max(4, int(w * 0.12))
+        housing = (pad, pad, w - pad, h - pad)
+        corner_r = max(4, int(w * 0.25))
+        self._rounded_rect(
+            housing, corner_r,
+            fill=theme["housing_fill"],
+            outline=theme["housing_border"], width=1,
+        )
+
+        # Three lamps
+        active = STATE_TO_ACTIVE.get(self._current_state)
+        off_map = {
+            "red": theme["off_red"], "yellow": theme["off_yellow"],
+            "green": theme["off_green"],
+        }
+
+        usable_top = housing[1] + (housing[3] - housing[1]) * 0.07
+        usable_btm = housing[3] - (housing[3] - housing[1]) * 0.07
+        spacing = (usable_btm - usable_top) / 3.0
+        radius = int(w * 0.17)
+
+        for i, name in enumerate(["red", "yellow", "green"]):
+            cy = usable_top + spacing * (i + 0.5)
+            cx = w / 2.0
+            is_active = (name == active)
+
+            fill = LIGHT_ON[name] if is_active else off_map.get(name, "#1A1A1A")
+            outline = "" if is_active else theme["housing_border"]
+
+            self._canvas.create_oval(
+                cx - radius, cy - radius,
+                cx + radius, cy + radius,
+                fill=fill, outline=outline, width=1,
+            )
+
+    def _rounded_rect(
+        self, bbox: tuple[int, int, int, int], r: int, **kwargs
+    ) -> None:
+        """Draw a rounded rectangle on the canvas."""
+        x1, y1, x2, y2 = bbox
+        fill = kwargs.get("fill", "")
+        outline = kwargs.get("outline", "")
+        width = kwargs.get("width", 1)
+
+        corners = [
+            (x1, y1, x1 + 2 * r, y1 + 2 * r, 90),
+            (x2 - 2 * r, y1, x2, y1 + 2 * r, 0),
+            (x2 - 2 * r, y2 - 2 * r, x2, y2, 270),
+            (x1, y2 - 2 * r, x1 + 2 * r, y2, 180),
+        ]
+
+        for cx1, cy1, cx2, cy2, start_angle in corners:
+            self._canvas.create_arc(
+                cx1, cy1, cx2, cy2,
+                start=start_angle, extent=90,
+                fill=fill, outline="", style="pieslice",
+            )
+        self._canvas.create_rectangle(x1 + r, y1, x2 - r, y2, fill=fill, outline="")
+        self._canvas.create_rectangle(x1, y1 + r, x2, y2 - r, fill=fill, outline="")
+        for cx1, cy1, cx2, cy2, start_angle in corners:
+            self._canvas.create_arc(
+                cx1, cy1, cx2, cy2,
+                start=start_angle, extent=90,
+                fill="", outline=outline, width=width, style="arc",
+            )
+        self._canvas.create_line(x1 + r, y1, x2 - r, y1, fill=outline, width=width)
+        self._canvas.create_line(x1 + r, y2, x2 - r, y2, fill=outline, width=width)
+        self._canvas.create_line(x1, y1 + r, x1, y2 - r, fill=outline, width=width)
+        self._canvas.create_line(x2, y1 + r, x2, y2 - r, fill=outline, width=width)
 
     # ── Drag ──────────────────────────────────────────────
 
@@ -315,7 +330,6 @@ class LampWindow:
         sh = self._root.winfo_screenheight()
         self._cfg["width"] = min(w, sw // 3)
         self._cfg["height"] = min(h, sh // 2)
-        self._renderer.clear_cache()
         _save_config(self._cfg)
         self._draw()
         self._clamp_to_screen()
@@ -324,7 +338,6 @@ class LampWindow:
         if key not in SIZE_PRESETS:
             return
         self._cfg["width"], self._cfg["height"] = SIZE_PRESETS[key]
-        self._renderer.clear_cache()
         _save_config(self._cfg)
         self._draw()
         self._clamp_to_screen()
@@ -364,7 +377,6 @@ class LampWindow:
                 sh = self._root.winfo_screenheight()
                 self._cfg["width"] = min(nw, sw // 3)
                 self._cfg["height"] = min(nh, sh // 2)
-                self._renderer.clear_cache()
                 _save_config(self._cfg)
                 self._draw()
                 self._clamp_to_screen()
@@ -443,11 +455,7 @@ class LampWindow:
 # ═══════════════════════════════════════════════════════════
 
 class ClaudeLampApp:
-    """Top-level controller: LampWindow + HTTP state receiver.
-
-    The HTTP server runs in a daemon thread.  State updates are enqueued
-    and drained on the Tkinter main thread every 50 ms.
-    """
+    """Top-level controller: LampWindow + HTTP state receiver."""
 
     def __init__(self) -> None:
         self._window: Optional[LampWindow] = None
@@ -479,8 +487,6 @@ class ClaudeLampApp:
     def request_shutdown(self) -> None:
         self._running = False
         self._update_queue.put("__SHUTDOWN__")
-
-    # ── HTTP server ───────────────────────────────────────
 
     class _Handler(http.server.BaseHTTPRequestHandler):
 
@@ -535,8 +541,6 @@ class ClaudeLampApp:
     def _serve(self) -> None:
         while self._running:
             self._http_server.handle_request()
-
-    # ── Lifecycle ─────────────────────────────────────────
 
     def _write_pid(self) -> None:
         try:

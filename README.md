@@ -27,16 +27,13 @@ No more alt-tabbing to check if Claude finished — one glance at the corner of 
 git clone https://github.com/yyyg88/ClaudeLamp.git
 cd ClaudeLamp
 
-# 2. Install dependency
-pip install Pillow
-
-# 3. Install hooks (auto-start with Claude Code)
+# 2. Install hooks (auto-start with Claude Code)
 python install.py
 
-# 4. Restart Claude Code — the lamp appears on your desktop 🟢
+# 3. Restart Claude Code — the lamp appears on your desktop 🟢
 ```
 
-> **One dependency.** `pip install Pillow` for high-quality anti-aliased rendering (the only extra package).
+> **Zero dependencies.** ClaudeLamp uses only Python's built-in `tkinter` — no `pip install` needed.
 
 **Uninstall:**
 ```powershell
@@ -96,7 +93,6 @@ All hooks are tagged `[claudelamp]` — safe to coexist with other hook-based to
 
 - **Windows 10 / 11**
 - **Python 3.9+** with `pythonw.exe` (included in standard installs)
-- **Pillow** (`pip install Pillow`) — the only external dependency
 - **Claude Code** (any recent version with hook support)
 
 ## Configuration
