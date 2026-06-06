@@ -16,20 +16,32 @@ $Port = if ($env:CLAUDELAMP_PORT) { $env:CLAUDELAMP_PORT } else { "23335" }
 $ServerUrl = "http://127.0.0.1:${Port}"
 
 # ── Event → state map ─────────────────────────────────────
+# 🟢 green  = Working (executing tools / thinking)
+# 🟡 yellow = Needs attention (permission / notification / waiting for user)
+# 🔴 red    = Idle (waiting for next prompt)
 $StateMap = @{
-    "SessionStart"        = "green"
-    "UserPromptSubmit"    = "yellow"
-    "PreToolUse"          = "red"
-    "PostToolUse"         = "red"
-    "PostToolUseFailure"  = "red"
-    "Stop"                = "green"
-    "StopFailure"         = "red"
-    "SubagentStart"       = "red"
-    "SubagentStop"        = "green"
-    "PreCompact"          = "yellow"
-    "PostCompact"         = "yellow"
+    # Working → green
+    "UserPromptSubmit"    = "green"
+    "PreToolUse"          = "green"
+    "PostToolUse"         = "green"
+    "SubagentStart"       = "green"
+    "PreCompact"          = "green"
+    "PostCompact"         = "green"
+
+    # Needs user interaction → yellow
     "PermissionRequest"   = "yellow"
     "Notification"        = "yellow"
+    "Elicitation"         = "yellow"
+    "PostToolUseFailure"  = "yellow"
+    "StopFailure"         = "yellow"
+
+    # Idle → red
+    "Stop"                = "red"
+    "SessionStart"        = "red"
+    "SubagentStop"        = "red"
+
+    # Session end → shutdown
+    "SessionEnd"          = "gray"
 }
 
 # ── Special: SessionEnd → shutdown the lamp ───────────────
