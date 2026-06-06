@@ -133,6 +133,8 @@ class LampWindow:
         self._current_theme: str = self._cfg.get("theme", "dark")
         self._drag_x: int = 0
         self._drag_y: int = 0
+        self._blink_on: bool = True
+        self._blink_job: Optional[str] = None
 
         # ── Window ────────────────────────────────────────
         self._root = tk.Tk()
@@ -216,6 +218,10 @@ class LampWindow:
             cy = usable_top + spacing * (i + 0.5)
             cx = w / 2.0
             is_active = (name == active)
+
+            # Blink yellow when active
+            if name == "yellow" and is_active and not self._blink_on:
+                is_active = False
 
             fill = LIGHT_ON[name] if is_active else off_map.get(name, "#1A1A1A")
             outline = "" if is_active else theme["housing_border"]
@@ -438,7 +444,33 @@ class LampWindow:
         if state not in STATE_TO_ACTIVE or state == self._current_state:
             return
         self._current_state = state
+
+        # Start blink for yellow, stop for others
+        if state == "yellow":
+            self._start_blink()
+        else:
+            self._stop_blink()
+
         self._draw()
+
+    def _start_blink(self) -> None:
+        if self._blink_job is not None:
+            return
+        self._blink_cycle()
+
+    def _blink_cycle(self) -> None:
+        if self._current_state != "yellow":
+            self._blink_job = None
+            return
+        self._blink_on = not self._blink_on
+        self._draw()
+        self._blink_job = self._canvas.after(500, self._blink_cycle)
+
+    def _stop_blink(self) -> None:
+        if self._blink_job is not None:
+            self._canvas.after_cancel(self._blink_job)
+            self._blink_job = None
+        self._blink_on = True
 
     def run(self) -> None:
         self._root.mainloop()
